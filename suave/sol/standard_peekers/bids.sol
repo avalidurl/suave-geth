@@ -130,6 +130,21 @@ contract MevShareBidContract is AnyBidContract {
 		return emitMatchBidAndHint(bid, matchHint);
 	}
 
+	event DebugBundleData(
+		bytes Bundle
+	);
+
+	function debugEmitMatchBidHintAndBundle(Suave.Bid memory bid, bytes memory matchHint, bytes memory bundle) internal virtual returns (bytes memory) {
+		emit DebugBundleData(bundle);
+		emit BidEvent(bid.id, bid.decryptionCondition, bid.allowedPeekers);
+		emit HintEvent(bid.id, matchHint);
+	}
+
+	function externalDebugEmitMatchBidHintAndBundle(Suave.Bid calldata bid, bytes calldata matchHint, bytes calldata bundle) external returns (bytes memory) {
+    	return debugEmitMatchBidHintAndBundle(bid, matchHint, bundle);
+	}
+
+
 	function emitMatchBidAndHint(Suave.Bid memory bid, bytes memory matchHint) internal virtual returns (bytes memory) {
 		emit BidEvent(bid.id, bid.decryptionCondition, bid.allowedPeekers);
 		emit MatchEvent(bid.id, matchHint);
@@ -145,13 +160,46 @@ contract MevShareBundleSenderContract is MevShareBidContract {
 		builderUrls = builderUrls_;
 	}
 
+	function newMatchBundleSender(uint64 decryptionCondition, address[] memory bidAllowedPeekers, address[] memory bidAllowedStores, Suave.BidId shareBidId) external payable returns (bytes memory) {
+		// WARNING : this function will copy the original mev share bid
+		// into a new key with potentially different permsissions
+		
+		require(Suave.isConfidential());
+		// 1. fetch confidential data
+		bytes memory matchBundleData = this.fetchBidConfidentialBundleData();
+
+		// 2. sim match alone for validity
+		uint64 egp = Suave.simulateBundle(matchBundleData);
+
+		// 3. extract hint
+		bytes memory matchHint = Suave.extractHint(matchBundleData);
+		
+		Suave.Bid memory bid = Suave.newBid(decryptionCondition, bidAllowedPeekers, bidAllowedStores, "mevshare:v0:matchBids");
+		Suave.confidentialStoreStore(bid.id, "mevshare:v0:ethBundles", matchBundleData);
+		Suave.confidentialStoreStore(bid.id, "mevshare:v0:ethBundleSimResults", abi.encode(0));
+
+		//4. merge bids
+		Suave.BidId[] memory bids = new Suave.BidId[](2);
+		bids[0] = shareBidId;
+		bids[1] = bid.id;
+		Suave.confidentialStoreStore(bid.id, "mevshare:v0:mergedBids", abi.encode(bids));
+
+		return emitMatchBidAndHint(bid, matchHint);
+	}
+
+
 	function emitMatchBidAndHint(Suave.Bid memory bid, bytes memory matchHint) internal virtual override returns (bytes memory) {
 		bytes memory bundleData = Suave.fillMevShareBundle(bid.id);
+		
 		for (uint i = 0; i < builderUrls.length; i++) {
 			Suave.submitBundleJsonRPC(builderUrls[i], "mev_sendBundle", bundleData);
 		}
 
-		return MevShareBidContract.emitMatchBidAndHint(bid, matchHint);
+		// Return the bytes to call externalDebugEmitMatchBidHintAndBundle
+   		return bytes.concat(
+        	this.externalDebugEmitMatchBidHintAndBundle.selector,
+        	abi.encode(bid, matchHint, bundleData)
+    	);
 	}
 }
 

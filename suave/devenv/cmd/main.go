@@ -58,6 +58,7 @@ func main() {
 			action: func() error {
 				testAddr1 = generatePrivKey()
 				testAddr2 = generatePrivKey()
+				fmt.Println("- Created test Addresses")
 
 				if err := fundAccount(mevmClt, testAddr1.Address(), fundBalance); err != nil {
 					return err
