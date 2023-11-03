@@ -221,7 +221,7 @@ func main() {
 				fmt.Println("debugBundle", debugBundle)
 
 				bidEvent := &BidEvent{}
-				if err := bidEvent.Unpack(receipt.Logs[]); err != nil {
+				if err := bidEvent.Unpack(receipt.Logs[1]); err != nil {
 					return err
 				}
 
